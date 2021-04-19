@@ -31,12 +31,118 @@
 			
 	<h1><code class="language-ruby">Live::Page</code></h1>
 	
-		
+	<p>Represents a connected client page with bound dynamic content areas.</p>
+	
 	
 	<section>
 	<h2>Definitions</h2>
 	
-		</section>
+	<section id="Live::Page#initialize"><h3><code class="language-ruby">def initialize(resolver)</code></h3><details open>
+	<summary><h4>Signature</h4></summary>
+	<dl><dt>
+					<strong>parameter</strong>　<code class="syntax">resolver</code>　<code class="language-ruby">Live::<a href="../Resolver/index.html" title="Live::Resolver">Resolver</a></code></dt><dd><p>Used to resolve client-side elements to server-side element instances.</p>
+</dd></dl>
+</details>
+<details>
+						<summary><h4>Implementation</h4></summary>
+						<pre><code class="language-ruby">def initialize(resolver)
+	@resolver = resolver
+	
+	@elements = {}
+	@updates = Async::Queue.new
+end</code></pre>
+					</details></section><section id="Live::Page#updates"><h3><code class="language-ruby">attr :updates</code></h3><p>The queue of outstanding events to be sent to the client.</p>
+</section><section id="Live::Page#bind"><h3><code class="language-ruby">def bind(element)</code></h3><p>Bind a client-side element to a server side element.</p>
+<details open>
+	<summary><h4>Signature</h4></summary>
+	<dl><dt>
+					<strong>parameter</strong>　<code class="syntax">element</code>　<code class="language-ruby">Live::<a href="../Element/index.html" title="Live::Element">Element</a></code></dt><dd><p>The element to bind.</p>
+</dd></dl>
+</details>
+<details>
+						<summary><h4>Implementation</h4></summary>
+						<pre><code class="language-ruby">def bind(element)
+	@elements[element.id] = element
+	
+	element.bind(self)
+end</code></pre>
+					</details></section><section id="Live::Page#resolve"><h3><code class="language-ruby">def resolve(id, data)</code></h3><p>Resolve a client-side element to a server side instance.</p>
+<details open>
+	<summary><h4>Signature</h4></summary>
+	<dl><dt>
+					<strong>parameter</strong>　<code class="syntax">id</code>　<code class="language-ruby">String</code></dt><dd><p>The unique identifier within the page.</p>
+</dd><dt>
+					<strong>parameter</strong>　<code class="syntax">data</code>　<code class="language-ruby">Hash</code></dt><dd><p>The data associated with the element, typically stored as <code>data-</code> attributes.</p>
+</dd></dl>
+</details>
+<details>
+						<summary><h4>Implementation</h4></summary>
+						<pre><code class="language-ruby">def resolve(id, data)
+	@resolver.call(id, data)
+end</code></pre>
+					</details></section><section id="Live::Page#handle"><h3><code class="language-ruby">def handle(id, event, details)</code></h3><p>Handle an event from the client. If the element could not be found, it is silently ignored.</p>
+<details open>
+	<summary><h4>Signature</h4></summary>
+	<dl><dt>
+					<strong>parameter</strong>　<code class="syntax">id</code>　<code class="language-ruby">String</code></dt><dd><p>The unique identifier of the element which forwarded the event.</p>
+</dd><dt>
+					<strong>parameter</strong>　<code class="syntax">event</code>　<code class="language-ruby">String</code></dt><dd><p>The type of the event.</p>
+</dd><dt>
+					<strong>parameter</strong>　<code class="syntax">details</code>　<code class="language-ruby">Hash</code></dt><dd><p>The associated details if any.</p>
+</dd><dt>
+					<strong>returns</strong>　<code class="language-ruby">Object</code></dt><dd><p>The result of the element handler, if the element was found.</p>
+</dd><dt>
+					<strong>returns</strong>　<code class="language-ruby">Nil</code></dt><dd><p>If the element could not be found.</p>
+</dd></dl>
+</details>
+<details>
+						<summary><h4>Implementation</h4></summary>
+						<pre><code class="language-ruby">def handle(id, event, details)
+	if element = @elements[id]
+		return element.handle(event, details)
+	else
+		Console.logger.warn(self, &quot;Could not handle event:&quot;, event, details)
+	end
+	
+	return nil
+end</code></pre>
+					</details></section><section id="Live::Page#run"><h3><code class="language-ruby">def run(connection)</code></h3><p>Run the event handling loop with the given websocket connection.</p>
+<details open>
+	<summary><h4>Signature</h4></summary>
+	<dl><dt>
+					<strong>parameter</strong>　<code class="syntax">connection</code>　<code class="language-ruby">Async::WebSocket::Connection</code></dt></dl>
+</details>
+<details>
+						<summary><h4>Implementation</h4></summary>
+						<pre><code class="language-ruby">def run(connection)
+	queue_task = Async do
+		while update = @updates.dequeue
+			Console.logger.debug(self, &quot;Sending update:&quot;, update)
+			
+			connection.write(update)
+			connection.flush if @updates.empty?
+		end
+	end
+	
+	while message = connection.read
+		Console.logger.debug(self, &quot;Reading message:&quot;, message)
+		
+		if id = message[:bind] and data = message[:data]
+			if element = self.resolve(id, data)
+				self.bind(element)
+			else
+				Console.logger.warn(self, &quot;Could not resolve element:&quot;, message)
+			end
+		elsif id = message[:id]
+			self.handle(id, message[:event], message[:details])
+		else
+			Console.logger.warn(self, &quot;Unhandled message:&quot;, message)
+		end
+	end
+ensure
+	queue_task&amp;.stop
+end</code></pre>
+					</details></section>	</section>
 
 				
 			<footer>Documentation generated by <a href="https://github.com/socketry/utopia-project">Utopia::Project</a>.</footer>
